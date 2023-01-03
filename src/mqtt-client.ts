@@ -1,130 +1,75 @@
 import mqtt from 'mqtt'
 
-type matcher = [pattern: string, callback: any]
+type Matcher = [pattern: RegExp, callback: MessageCallback]
 
-const matchers: matcher[] = [
-  [
-    'zigbee2mqtt/bridge/groups',
-    () => {
-      console.log('grps')
-    },
-  ],
-]
+export type MessageCallback = (topic: string, message: string) => void
 
-class MqttClient {
+export class MqttClient {
   private client: mqtt.MqttClient
+  private matchers = [] as Matcher[]
+  private subscriptions = [] as string[]
 
-  // constructor() {}
+  constructor() {
+    this.messageHandler = this.messageHandler.bind(this)
+  }
 
   async connect(broker: string): Promise<void> {
-    console.log('CLASSY connect to', broker)
-
     return new Promise((resolve, reject) => {
       this.client = mqtt.connect(broker)
 
-      this.client.on('connect', () => {
-        console.log('Connected!')
+      this.client.on('connect', async () => {
+        this.client.on('message', this.messageHandler)
+
+        await this.subscribe()
+
         resolve()
       })
       this.client.on('error', (err) => {
         console.error('Connection failed', err)
-        reject()
+        reject(err)
       })
     })
   }
-}
 
-const firren = new MqttClient()
-
-console.log(firren)
-
-firren.connect('Mah brokeh!')
-
-const settings = {
-  broker: 'mqtt://mqtt.my_broker.se',
-  base_topic: 'zigbee2mqtt',
-}
-
-const client = mqtt.connect('mqtt://mqtt.my_broker.se', {
-  // clientId: "fiskpinne2",clean: false
-})
-
-client.on('message', function (topic, messageB) {
-  const message = messageB.toString()
-
-  console.log('Parse', topic)
-
-  const match = matchers.find((m) => topic.match(m[0]))
-
-  if (!match) return
-
-  console.log('Fond!')
-
-  const callback = match[1]
-
-  callback()
-  return
-
-  if (topic.match('zigbee2mqtt/bridge/devices')) {
-    console.log('⚙️: Devices')
-
-    // parseDevices(message)
-  } else if (topic == 'zigbee2mqtt/bridge/groups') {
-    console.log('⚙️: Groups')
-    // switchAction(topic)
-  } else if (topic.match(/zigbee2mqtt\/\w+\/action/)) {
-    console.log(topic, message)
-    // switchAction(topic)
-  } else {
-    // console.log('Unknown', topic)
-  }
-  // message is Buffer
-  // client.end()
-})
-
-client.on('connect', function () {
-  client.subscribe(`zigbee2mqtt/bridge/#`, (err, granted) => {
-    if (!err) {
-      if (granted.length > 0) {
-        const grantedTopic = granted[0].topic
-        console.log('subscribed to', grantedTopic)
-      }
-      return
-    }
-  })
-
-  // client.subscribe(`zigbee2mqtt/bridge/#`)
-  // client.subscribe(`zigbee2mqtt/bridge/devices`)
-  // client.subscribe(`zigbee2mqtt/bridge/groups`)
-  // client.subscribe(`${settings.base_topic}/#`, function (err) {
-  // client.subscribe(`zigbee2mqtt/+/action`, function (err) {
-  //   if (!err) {
-  //     console.log('subscribed')
-  //   }
-  // })
-})
-
-export const addListener = (topic: string, callback: any): void => {
-  console.log('Add a listener', callback, 'on', topic)
-
-  const fullTopic = `${settings.base_topic}/${topic}`
-  client.subscribe(
-    fullTopic,
-    {
-      // qos: 1,
-      // rap: false
-    } as mqtt.IClientSubscribeOptions,
-    function (err, granted) {
+  private async subscribe() {
+    const subscriptions = pruneDuplicates(this.subscriptions)
+    this.client.subscribe(subscriptions, function (err, granted) {
       if (!err) {
         const grantedTopic = granted[0].topic
-        console.log('subscribed to', grantedTopic)
+        console.log('subscribed to', grantedTopic, granted)
         return
       }
-    },
-  )
+    })
+  }
+
+  private messageHandler(topic: string, msgB: Buffer) {
+    topic
+    msgB
+
+    const match = this.matchers.find(([expression, _callback]) =>
+      expression.test(topic),
+    )
+
+    if (!match) return
+
+    const message = msgB.toString()
+    const [_expression, callback] = match
+
+    callback(topic, message)
+  }
+
+  addListener(
+    subscribeTopic: string,
+    matchTopic: RegExp,
+    callback: MessageCallback,
+  ) {
+    if (this.client) {
+      throw 'addListener must be called before connection'
+    }
+
+    this.matchers.push([matchTopic, callback])
+    this.subscriptions.push(subscribeTopic)
+  }
 }
 
-export const startListening = (): void => {
-  console.log('start parsing messages')
-  console.log('Is probably parsing now')
-}
+const pruneDuplicates = (values: string[]): string[] => [...new Set(values)]
