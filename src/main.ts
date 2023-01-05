@@ -1,68 +1,42 @@
-import {
-  // addListener,
-  startListening,
-} from './mqtt-client.js'
-
-/**
- * Some predefined delay values (in milliseconds).
- */
-export enum Delays {
-  Short = 500,
-  Medium = 2000,
-  Long = 5000,
-}
-
-/**
- * Returns a Promise<string> that resolves after a given time.
- *
- * @param {string} name - A name.
- * @param {number=} [delay=Delays.Medium] - A number of milliseconds to delay resolution of the Promise.
- * @returns {Promise<string>}
- */
-function delayedHello(
-  name: string,
-  delay: number = Delays.Medium,
-): Promise<string> {
-  return new Promise((resolve: (value?: string) => void) =>
-    setTimeout(() => resolve(`Hello, ${name}`), delay),
-  )
-}
-
-// Please see the comment in the .eslintrc.json file about the suppressed rule!
-// Below is an example of how to use ESLint errors suppression. You can read more
-// at https://eslint.org/docs/latest/user-guide/configuring/rules#disabling-rules
-
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-export async function greeter(name: any) {
-  // eslint-disable-line @typescript-eslint/no-explicit-any
-  // The name parameter should be of type string. Any is used only to trigger the rule.
-  return await delayedHello(name, Delays.Long)
-}
+import { MessageCallback, MqttClient } from './mqtt-client.js'
+import { Z2mClient } from './z2m-client.js'
 
 let groups = {}
 let devices = {}
 
+const zigbee = new Z2mClient()
+
+const tempSettings = {
+  mqtt: {
+    broker: 'mqtt://mqtt.brickpile.se',
+    base_topic: 'zigbee2mqtt',
+  },
+}
+
 const main = async () => {
   console.log(groups, devices)
-  startListening()
 
-  // addListener('bridge/groups', () => {})
-  // addListener('bridge/devices', () => {})
-  // await addListener('bridge/state', () => {})
+  const mqtt = new MqttClient()
 
-  // setTimeout(async () => {
-  // }, 100)
+  mqtt.addListener('zigbee2mqtt/bridge/#', /bridge\/groups$/, groupsCallback)
+  mqtt.addListener('zigbee2mqtt/bridge/#', /bridge\/devices$/, devicesCallback)
 
-  // addListener('bridge/#', () => {})
-  // addListener('bridge/#', () => {})
+  mqtt.connect(tempSettings.mqtt.broker)
 }
 
-export const setGroups = (newGroups) => {
-  groups = newGroups
+const groupsCallback: MessageCallback = (_topic: string, message: string) => {
+  console.log('Group callback, size:', message.length)
+
+  groups = JSON.parse(message)
+
+  console.log(zigbee)
+  zigbee.updateGroups(groups)
 }
 
-export const setDevices = (newDevices) => {
-  devices = newDevices
+const devicesCallback: MessageCallback = (_topic: string, message: string) => {
+  console.log('Device callback, size:', message.length)
+
+  devices = JSON.parse(message)
 }
 
 main()
